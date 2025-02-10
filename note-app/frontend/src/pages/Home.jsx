@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
+import { useNotes } from "../context/NotesContext";
 import { FaExpand, FaCompress, FaTrash, FaClipboard, FaStar, FaSort, FaMicrophone, FaPen } from "react-icons/fa";
 import Sidebar from "../components/SidebarComponent";
 import SearchBar from "../components/SearchbarComponent";
@@ -7,58 +8,54 @@ import NoteModal from "../components/NoteModal";
 import ErrorBoundary from "../components/ErrorBoundary";
 
 const Home = () => {
-  const [notes, setNotes] = useState([]);
+  const { notes, fetchNotes, deleteNote, updateNote, toggleFavorite, searchNotes } = useNotes();
   const [selectedNote, setSelectedNote] = useState(null);
   const [isModalOpen, setModalOpen] = useState(false);
   const [isFullscreen, setFullscreen] = useState(false);
   const [showFavorites, setShowFavorites] = useState(false);
-  const [sortType, setSortType] = useState(null);
   const [showSortOptions, setShowSortOptions] = useState(false);
+  const [sortType, setSortType] = useState("date");
+  const [sortOrder, setSortOrder] = useState("desc");
 
   const [recordedTime, setRecordedTime] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
-  const [intervalId, setIntervalId] = useState(null);
+  const intervalRef = useRef(null);
 
+  // Fetch notes on mount
   useEffect(() => {
     fetchNotes();
-  }, []);
+  }, [fetchNotes]);
 
-  const fetchNotes = async () => {
-    try {
-      const response = await fetch("http://localhost:4000/api/notes");
-      const data = await response.json();
-      setNotes(data);
-    } catch (error) {
-      console.error("Error fetching notes:", error);
-    }
-  };
+  // Filter notes based on favorites
+  const filteredNotes = useMemo(() => {
+    return showFavorites ? notes.filter((note) => note.isFavorite) : notes;
+  }, [notes, showFavorites]);
 
-  const toggleFavorite = async (id) => {
-    try {
-      const response = await fetch(
-        `http://localhost:4000/api/notes/${id}/toggle-favorite`,
-        { method: "PATCH" }
-      );
-      if (!response.ok) throw new Error("Failed to toggle favorite");
-      const updatedNote = await response.json();
-      setNotes((prevNotes) =>
-        prevNotes.map((note) => (note._id === id ? updatedNote : note))
-      );
-    } catch (error) {
-      console.error("Error toggling favorite:", error);
-    }
-  };
+  // **Sorting Notes**
+  const sortedNotes = useMemo(() => {
+    let sortedArray = [...filteredNotes]; // Create a copy to avoid mutation
 
-  const deleteNote = async (id) => {
-    try {
-      const response = await fetch(`http://localhost:4000/api/notes/${id}`, {
-        method: "DELETE",
+    if (sortType === "name") {
+      sortedArray.sort((a, b) => {
+        const titleA = a.title?.toLowerCase() || "";
+        const titleB = b.title?.toLowerCase() || "";
+        return sortOrder === "asc" ? titleA.localeCompare(titleB) : titleB.localeCompare(titleA);
       });
-      if (!response.ok) throw new Error("Failed to delete note");
-      setNotes((prevNotes) => prevNotes.filter((note) => note._id !== id));
-    } catch (error) {
-      console.error("Error deleting note:", error);
+    } else if (sortType === "date") {
+      sortedArray.sort((a, b) => {
+        const dateA = new Date(a.timestamp || 0);
+        const dateB = new Date(b.timestamp || 0);
+        return sortOrder === "asc" ? dateA - dateB : dateB - dateA;
+      });
     }
+
+    return sortedArray;
+  }, [filteredNotes, sortType, sortOrder]);
+
+  const handleSort = (type) => {
+    setSortType(type);
+    setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+    setShowSortOptions(false);
   };
 
   const handleToggleFavorites = () => {
@@ -66,16 +63,7 @@ const Home = () => {
   };
 
   const handleSearch = (searchTerm) => {
-    if (searchTerm.trim() === "") {
-      fetchNotes();
-    } else {
-      const filteredNotes = notes.filter(
-        (note) =>
-          note.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          note.content.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-      setNotes(filteredNotes);
-    }
+    searchNotes(searchTerm);
   };
 
   const handleNoteClick = (note) => {
@@ -85,88 +73,50 @@ const Home = () => {
 
   const handleCopy = (text) => {
     navigator.clipboard.writeText(text);
-    alert("Note content copied to clipboard!");
-  };
-
-  const handleSort = (type) => {
-    let sortedNotes = [...notes];
-    if (type === "name") {
-      sortedNotes.sort((a, b) => a.title.localeCompare(b.title));
-    } else if (type === "date") {
-      sortedNotes.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-    }
-    setNotes(sortedNotes);
-    setSortType(type);
-    setShowSortOptions(false);
+    alert("Note copied to clipboard!");
   };
 
   const startRecording = () => {
     setIsRecording(true);
     let time = 0;
-    const interval = setInterval(() => {
-      if (isRecording) {
-        setRecordedTime(time++);
-      }
+    intervalRef.current = setInterval(() => {
+      setRecordedTime(++time);
     }, 1000);
-
-    setIntervalId(interval);
   };
 
   const stopRecording = () => {
     setIsRecording(false);
-    clearInterval(intervalId);
+    clearInterval(intervalRef.current);
   };
 
-  const handleUpdateNote = async (id, updatedNoteData) => {
-    try {
-      const response = await fetch(`http://localhost:4000/api/notes/${id}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(updatedNoteData),
-      });
-      if (!response.ok) throw new Error("Failed to update note");
-      const updatedNote = await response.json();
-      setNotes((prevNotes) =>
-        prevNotes.map((note) => (note._id === id ? updatedNote : note))
-      );
-    } catch (error) {
-      console.error("Error updating note:", error);
-    }
+  const handleUpdateNote = (id, updatedNoteData) => {
+    updateNote(id, updatedNoteData);
   };
 
   const handleAddNote = (newNote) => {
     if (newNote.type === "audio") {
       newNote.recordedTime = recordedTime;
     }
-    setNotes((prevNotes) => [newNote, ...prevNotes]);
   };
-
-  const displayedNotes = showFavorites
-    ? notes.filter((note) => note.isFavorite)
-    : notes;
 
   const toggleFullscreen = () => {
     const modalElement = document.querySelector(".note-modal");
-
-    if (!document.fullscreenElement) {
-      modalElement.requestFullscreen()
-        .then(() => setFullscreen(true))
-        .catch(console.error);
-    } else {
-      document.exitFullscreen()
-        .then(() => setFullscreen(false))
-        .catch(console.error);
+    if (modalElement) {
+      if (!document.fullscreenElement) {
+        modalElement.requestFullscreen()
+          .then(() => setFullscreen(true))
+          .catch(console.error);
+      } else {
+        document.exitFullscreen()
+          .then(() => setFullscreen(false))
+          .catch(console.error);
+      }
     }
   };
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <Sidebar
-        showFavorites={handleToggleFavorites}
-        resetFavorites={() => setShowFavorites(false)}
-      />
+      <Sidebar showFavorites={handleToggleFavorites} resetFavorites={() => setShowFavorites(false)} />
       <div id="app-container" className="flex-1 p-4 overflow-y-auto">
         <div className="flex justify-between items-center">
           <SearchBar onSearch={handleSearch} />
@@ -178,17 +128,11 @@ const Home = () => {
               Sort <FaSort />
             </button>
             {showSortOptions && (
-              <div className="absolute right-0 mt-2 w-40 bg-white border rounded-lg shadow-lg">
-                <button
-                  className="block w-full px-4 py-2 text-left hover:bg-gray-100"
-                  onClick={() => handleSort("name")}
-                >
+              <div className="absolute right-0 mt-2 w-40 bg-white border rounded-lg shadow-lg z-50">
+                <button className="block w-full px-4 py-2 text-left hover:bg-gray-100" onClick={() => handleSort("name")}>
                   Sort by Name
                 </button>
-                <button
-                  className="block w-full px-4 py-2 text-left hover:bg-gray-100"
-                  onClick={() => handleSort("date")}
-                >
+                <button className="block w-full px-4 py-2 text-left hover:bg-gray-100" onClick={() => handleSort("date")}>
                   Sort by Date & Time
                 </button>
               </div>
@@ -198,82 +142,78 @@ const Home = () => {
 
         <NoteInput onAddNote={handleAddNote} setRecordedTime={setRecordedTime} />
 
+        {/* Notes Grid with Sorting Display */}
         <div className="grid grid-cols-2 gap-4 mt-4 max-h-[calc(100vh-150px)] overflow-y-auto">
-          {displayedNotes.map((note, index) => (
-            <div
-              key={note._id || note.id || index}
-              className="relative border p-4 rounded-lg cursor-pointer hover:bg-gray-100"
-              onClick={() => handleNoteClick(note)}
-            >
-              <h3 className="text-xl font-semibold">{note.title}</h3>
-              <p className="text-gray-700">{note.content}</p>
-              <p className="text-sm text-gray-500 mt-1">
-                🕒 {new Date(note.timestamp).toLocaleString()}
-              </p>
-              <div className="flex justify-between items-center mt-2">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleFavorite(note._id || note.id);
-                  }}
-                  className={`text-xl ${note.isFavorite ? "text-yellow-500" : "text-gray-400"}`}
-                >
-                  <FaStar />
-                </button>
-                <div className="flex gap-2">
+          {sortedNotes.length === 0 ? (
+            <p>No notes available</p>
+          ) : (
+            sortedNotes.map((note, index) => (
+              <div
+                key={note._id || note.id || index}
+                className="relative border p-4 rounded-lg cursor-pointer hover:bg-gray-100"
+                onClick={() => handleNoteClick(note)}
+              >
+                <h3 className="text-xl font-semibold">{note.title}</h3>
+                <p className="text-gray-700">{note.content}</p>
+                <p className="text-sm text-gray-500 mt-1">
+                  🕒 {new Date(note.timestamp).toLocaleString()}
+                </p>
+                <div className="flex justify-between items-center mt-2">
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteNote(note._id || note.id);
-                    }}
-                    className="text-red-500"
+                    onClick={(e) => { e.stopPropagation(); toggleFavorite(note._id || note.id); }}
+                    className={`text-xl ${note.isFavorite ? "text-yellow-500" : "text-gray-400"}`}
                   >
-                    <FaTrash />
+                    <FaStar />
                   </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleCopy(note.content);
-                    }}
-                    className="text-gray-500"
-                  >
-                    <FaClipboard />
-                  </button>
-                </div>
-              </div>
-
-              {note.type === "audio" && (
-                <div className="absolute top-2 right-2 flex items-center space-x-1 text-gray-500">
-                  <div className="flex items-center gap-1">
-                    <FaMicrophone className="text-red-500" />
-                    <span>{note.recordedTime}s</span>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); deleteNote(note._id || note.id); }}
+                      className="text-red-500"
+                    >
+                      <FaTrash />
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleCopy(note.content); }}
+                      className="text-gray-500"
+                    >
+                      <FaClipboard />
+                    </button>
                   </div>
                 </div>
-              )}
 
-              {note.type === "text" && (
-                <div className="absolute top-2 right-2">
-                  <FaPen className="text-green-500" />
-                </div>
-              )}
-            </div>
-          ))}
+                {note.type === "audio" && (
+                  <div className="absolute top-2 right-2 flex items-center space-x-1 text-gray-500">
+                    <div className="flex items-center gap-1">
+                      <FaMicrophone className="text-red-500" />
+                      <span>{note.recordedTime}s</span>
+                    </div>
+                  </div>
+                )}
+
+                {note.type === "text" && (
+                  <div className="absolute top-2 right-2">
+                    <FaPen className="text-green-500" />
+                  </div>
+                )}
+              </div>
+            ))
+          )}
         </div>
 
         <ErrorBoundary>
-        <NoteModal
-  note={selectedNote}
-  isOpen={isModalOpen}
-  onClose={() => setModalOpen(false)}
-  onUpdate={handleUpdateNote}
-  handleCopy={handleCopy}
-  isFullscreen={isFullscreen}
-  onFullscreenToggle={toggleFullscreen}
-  className="note-modal"
-  startRecording={startRecording}
-  stopRecording={stopRecording}
-  recordedTime={recordedTime} // Ensure this is being passed correctly
-/>
+          <NoteModal
+            note={selectedNote}
+            isOpen={isModalOpen}
+            onClose={() => setModalOpen(false)}
+            onUpdate={handleUpdateNote}
+            handleCopy={handleCopy}
+            isFullscreen={isFullscreen}
+            onFullscreenToggle={toggleFullscreen}
+            className="note-modal"
+            startRecording={startRecording}
+            stopRecording={stopRecording}
+            recordedTime={recordedTime}
+          />
         </ErrorBoundary>
       </div>
     </div>
