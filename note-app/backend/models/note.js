@@ -18,7 +18,7 @@ const noteSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
-  isFavorite: {  
+  isFavorite: {
     type: Boolean,
     default: false,  // Favorite status field
   },
@@ -29,6 +29,11 @@ const noteSchema = new mongoose.Schema({
   recordedTime: {  // Add recordedTime field to store the duration of the audio recording
     type: Number,
     default: 0,
+  },
+  userId: {  // Add userId to associate a note with a user
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
   }
 });
 

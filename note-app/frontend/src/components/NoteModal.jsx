@@ -12,7 +12,7 @@ const NoteModal = ({
   className,
   startRecording,
   stopRecording,
-  recordedTime,
+  recordedTime, // This should be coming from parent
 }) => {
   const [noteData, setNoteData] = useState(
     note || { title: "", content: "", type: "text", transcription: "", image: "", isFavorite: false, timestamp: Date.now() }
@@ -42,12 +42,36 @@ const NoteModal = ({
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImage(reader.result);
-        setNoteData((prev) => ({ ...prev, image: reader.result }));
-      };
-      reader.readAsDataURL(file);
+      const formData = new FormData();
+      formData.append("image", file);
+  
+      // Get the JWT token from localStorage (or any other place where it's stored)
+      const token = localStorage.getItem("token");  // Replace with your token storage logic if different
+  
+      if (!token) {
+        alert("You are not logged in!");
+        return;
+      }
+  
+      // Update the URL to include the note ID (assuming you have the note ID)
+      fetch(`http://localhost:4000/api/notes/upload-image/${noteData._id}`, {
+        method: "PATCH",
+        headers: {
+          "Authorization": `Bearer ${token}`,  // Include the token here
+        },
+        body: formData,
+      })
+        .then((response) => response.json())
+        .then((data) => {
+          if (data.imageUrl) {
+            // Once the image is uploaded, set the image URL
+            setImage(data.imageUrl);
+            setNoteData((prev) => ({ ...prev, image: data.imageUrl }));
+          } else {
+            console.error('Error in server response:', data.message || 'Unknown error');
+          }
+        })
+        .catch((err) => console.error("Error uploading image:", err));
     }
   };
 
@@ -141,6 +165,28 @@ const NoteModal = ({
           ))}
         </div>
 
+        {/* Image Display */}
+        {image && (
+  <div className="mb-4">
+    <h3 className="font-semibold mb-2">Uploaded Image:</h3>
+    
+    <img
+      src={`http://localhost:4000/uploads/${image}`}  // Corrected path
+      alt="Uploaded"
+      className="max-w-full max-h-60 rounded mb-2"
+    />
+
+    <button
+      onClick={handleImageRemove}
+      className="text-red-500 hover:text-red-700 flex items-center"
+    >
+      <FaTimes className="mr-2" /> Remove Image
+    </button>
+  </div>
+)}
+
+
+
         {/* Content Input */}
         <div className="flex justify-between mb-4">
           <textarea
@@ -165,24 +211,6 @@ const NoteModal = ({
           <div className="mb-4">
             <h3 className="font-semibold mb-2">Transcription:</h3>
             <p className="p-2 bg-gray-100 rounded">{noteData.transcription}</p>
-          </div>
-        )}
-
-        {/* Image Display */}
-        {image && (
-          <div className="mb-4">
-            <h3 className="font-semibold mb-2">Uploaded Image:</h3>
-            <img
-              src={image}
-              alt="Uploaded"
-              className="max-w-full max-h-60 rounded mb-2"
-            />
-            <button
-              onClick={handleImageRemove}
-              className="text-red-500 hover:text-red-700 flex items-center"
-            >
-              <FaTimes className="mr-2" /> Remove Image
-            </button>
           </div>
         )}
 

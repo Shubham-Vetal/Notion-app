@@ -8,6 +8,7 @@ import NoteModal from "../components/NoteModal";
 import ErrorBoundary from "../components/ErrorBoundary";
 
 const Home = () => {
+  console.log("Home component rendered");
   const { notes, fetchNotes, deleteNote, updateNote, toggleFavorite, searchNotes } = useNotes();
   const [selectedNote, setSelectedNote] = useState(null);
   const [isModalOpen, setModalOpen] = useState(false);
@@ -21,13 +22,25 @@ const Home = () => {
   const [isRecording, setIsRecording] = useState(false);
   const intervalRef = useRef(null);
 
-  // Fetch notes on mount
+  // State to track if notes have been fetched and if no notes are available
+  const [hasFetched, setHasFetched] = useState(false);
+
+  // Fetch notes on mount only if notes are empty
   useEffect(() => {
-    fetchNotes();
-  }, [fetchNotes]);
+    console.log("Fetching notes...");
+    if (notes.length === 0 && !hasFetched) {
+      fetchNotes();
+      setHasFetched(true);  // Prevent re-fetching or rendering empty message again
+    }
+  }, [fetchNotes, notes.length, hasFetched]);
+
+  useEffect(() => {
+    console.log("Notes fetched:", notes);
+  }, [notes]);
 
   // Filter notes based on favorites
   const filteredNotes = useMemo(() => {
+    console.log("Filtering notes with favorites:", showFavorites);
     return showFavorites ? notes.filter((note) => note.isFavorite) : notes;
   }, [notes, showFavorites]);
 
@@ -35,6 +48,7 @@ const Home = () => {
   const sortedNotes = useMemo(() => {
     let sortedArray = [...filteredNotes]; // Create a copy to avoid mutation
 
+    console.log("Sorting notes by:", sortType, "Order:", sortOrder);
     if (sortType === "name") {
       sortedArray.sort((a, b) => {
         const titleA = a.title?.toLowerCase() || "";
@@ -49,34 +63,44 @@ const Home = () => {
       });
     }
 
+    console.log("Sorted notes:", sortedArray);
     return sortedArray;
   }, [filteredNotes, sortType, sortOrder]);
 
   const handleSort = (type) => {
-    setSortType(type);
-    setSortOrder(sortOrder === "asc" ? "desc" : "asc");
-    setShowSortOptions(false);
+    if (sortType === type) {
+      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+    } else {
+      setSortType(type);
+      setSortOrder("asc");  // Reset to ascending when switching sort criteria
+    }
+    setShowSortOptions(false);  // Close the sort options after selection
   };
 
   const handleToggleFavorites = () => {
+    console.log("Toggling favorites");
     setShowFavorites(!showFavorites);
   };
 
   const handleSearch = (searchTerm) => {
+    console.log("Searching notes with term:", searchTerm);
     searchNotes(searchTerm);
   };
 
   const handleNoteClick = (note) => {
+    console.log("Note clicked:", note);
     setSelectedNote(note);
     setModalOpen(true);
   };
 
   const handleCopy = (text) => {
+    console.log("Copying text to clipboard:", text);
     navigator.clipboard.writeText(text);
     alert("Note copied to clipboard!");
   };
 
   const startRecording = () => {
+    console.log("Starting recording...");
     setIsRecording(true);
     let time = 0;
     intervalRef.current = setInterval(() => {
@@ -85,15 +109,18 @@ const Home = () => {
   };
 
   const stopRecording = () => {
+    console.log("Stopping recording...");
     setIsRecording(false);
     clearInterval(intervalRef.current);
   };
 
   const handleUpdateNote = (id, updatedNoteData) => {
+    console.log("Updating note:", id, updatedNoteData);
     updateNote(id, updatedNoteData);
   };
 
   const handleAddNote = (newNote) => {
+    console.log("Adding note:", newNote);
     if (newNote.type === "audio") {
       newNote.recordedTime = recordedTime;
     }
@@ -144,7 +171,7 @@ const Home = () => {
 
         {/* Notes Grid with Sorting Display */}
         <div className="grid grid-cols-2 gap-4 mt-4 max-h-[calc(100vh-150px)] overflow-y-auto">
-          {sortedNotes.length === 0 ? (
+          {sortedNotes.length === 0 && hasFetched ? (
             <p>No notes available</p>
           ) : (
             sortedNotes.map((note, index) => (
